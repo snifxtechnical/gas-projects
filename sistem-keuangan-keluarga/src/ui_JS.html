@@ -37,6 +37,7 @@ window.addEventListener('load', () => {
 
 // ══════════════════════════════════════════════════════════════════
 //  NAVIGASI TAB
+//  FIX: Tambah closing brace } yang hilang setelah navBtn.classList.add('active')
 // ══════════════════════════════════════════════════════════════════
 function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -52,11 +53,12 @@ function switchTab(tabName) {
   const navBtn = document.getElementById('nav-' + tabName);
   if (navBtn) {
     navBtn.classList.add('active');
-  if (tabName === 'cicilan') {
-    if (lainnyaBtn) lainnyaBtn.classList.add('active');
-  } else if (tabName === 'arisan' || tabName === 'master') {
+  }  // ← FIX: closing brace yang hilang dipindah ke sini
+
+  if (tabName === 'cicilan' || tabName === 'arisan' || tabName === 'master') {
     if (lainnyaBtn) lainnyaBtn.classList.add('active');
   }
+
   APP_STATE.currentTab = tabName;
 
   if (tabName === 'dashboard') loadDashboard();
@@ -156,6 +158,8 @@ function updateHeaderBulan() {
 
 // ══════════════════════════════════════════════════════════════════
 //  TAB DASHBOARD
+//  FIX: loadSankey() dipanggil langsung dari sini, BUKAN dari
+//       override renderDashboard (yang menyebabkan infinite recursion)
 // ══════════════════════════════════════════════════════════════════
 function onDashMonthChange(iso) {
   APP_STATE.currentBulan = iso;
@@ -170,7 +174,12 @@ function loadDashboard() {
   google.script.run
     .withSuccessHandler(res => {
       hide('dashboard-loader');
-      if (res.success) { renderDashboard(res.data); show('dashboard-content'); }
+      if (res.success) {
+        renderDashboard(res.data);
+        show('dashboard-content');
+        // FIX: Panggil loadSankey di sini, bukan lewat override renderDashboard
+        setTimeout(() => loadSankey(), 300);
+      }
       else showToast('❌ ' + res.message, 'error');
     })
     .withFailureHandler(err => { hide('dashboard-loader'); showToast('❌ ' + err.message, 'error'); })
@@ -1975,8 +1984,8 @@ function tipeAkunBadge(tipe) {
     'E-WALLET'    : { cls: 'badge-violet',  label: 'E-Wallet'   },
     'TABUNGAN'    : { cls: 'badge-teal',    label: 'Tabungan'   },
     'INVESTASI'   : { cls: 'badge-amber',   label: 'Investasi'  },
-    'CREDIT_CARD' : { cls: 'badge-cc',      label: 'Kartu Kredit'},  // v1.1
-    'PAYLATER'    : { cls: 'badge-paylater',label: 'Paylater'   }    // v1.1
+    'CREDIT_CARD' : { cls: 'badge-cc',      label: 'Kartu Kredit'},
+    'PAYLATER'    : { cls: 'badge-paylater',label: 'Paylater'   }
   };
   return map[(tipe || '').toUpperCase()] || { cls: 'badge-gray', label: tipe || '-' };
 }
@@ -2010,7 +2019,7 @@ function markInvalid(id) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  SANKEY DIAGRAM  (v2.2)
+//  SANKEY DIAGRAM
 // ══════════════════════════════════════════════════════════════════
 let _sankeyChartsLoaded = false;
 
@@ -2083,7 +2092,7 @@ function drawSankeyChart(rows) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  TAB CICILAN  (v1.1 NEW)
+//  TAB CICILAN  (v1.1)
 // ══════════════════════════════════════════════════════════════════
 
 function switchCicilanTab(tabName) {
@@ -2125,7 +2134,6 @@ function renderCicilan(list) {
   const aktif   = list.filter(c => c.status === 'AKTIF');
   const riwayat = list.filter(c => c.status === 'LUNAS');
 
-  // ── Summary aktif ─────────────────────────────────────────────
   const summaryEl = document.getElementById('cicilan-summary');
   if (summaryEl) {
     if (aktif.length > 0) {
@@ -2139,7 +2147,6 @@ function renderCicilan(list) {
     }
   }
 
-  // ── Render tab Aktif ──────────────────────────────────────────
   const aktifEl = document.getElementById('cicilan-aktif-list');
   if (aktifEl) {
     if (aktif.length > 0) {
@@ -2151,7 +2158,6 @@ function renderCicilan(list) {
     }
   }
 
-  // ── Render tab Riwayat ────────────────────────────────────────
   const riwEl = document.getElementById('cicilan-riwayat-list');
   if (riwEl) {
     if (riwayat.length > 0) {
@@ -2217,8 +2223,6 @@ function renderCicilanCard(c) {
     </div>`;
 }
 
-// ── Bayar Tagihan Modal ───────────────────────────────────────────────────────
-
 function openBayarTagihanModal(idCicilan, namaAkun, nominalPerBulan) {
   const akunOptions = buildAkunNonUtangOptions();
 
@@ -2270,7 +2274,6 @@ function submitBayarTagihan() {
         closeModal();
         showToast('✅ ' + res.message, 'success');
         loadCicilan();
-        // Refresh dashboard DSR jika sedang di tab dashboard
         if (APP_STATE.currentTab === 'dashboard') loadDashboard();
       } else {
         showToast('❌ ' + res.message, 'error');
@@ -2285,12 +2288,8 @@ function submitBayarTagihan() {
     });
 }
 
-// ── Lunas Manual ─────────────────────────────────────────────────────────────
-
 function confirmLunasCicilan(idCicilan, namaBrang) {
-  if (!confirm(`Tandai cicilan "${namaBrang}" sebagai LUNAS?
-
-Gunakan ini untuk pelunasan dipercepat (tidak membuat transaksi transfer).`)) return;
+  if (!confirm(`Tandai cicilan "${namaBrang}" sebagai LUNAS?\n\nGunakan ini untuk pelunasan dipercepat (tidak membuat transaksi transfer).`)) return;
   google.script.run
     .withSuccessHandler(res => {
       showToast(res.success ? '✅ ' + res.message : '❌ ' + res.message, res.success ? 'success' : 'error');
@@ -2300,12 +2299,11 @@ Gunakan ini untuk pelunasan dipercepat (tidak membuat transaksi transfer).`)) re
     .lunasCicilan(idCicilan);
 }
 
-// Auto-load Sankey when dashboard renders (non-blocking)
-const _origRenderDashboard = renderDashboard;
-function renderDashboard(data) {
-  _origRenderDashboard(data);
-  // Load Sankey di background setelah dashboard render
-  setTimeout(() => loadSankey(), 300);
-}
+// ══════════════════════════════════════════════════════════════════
+//  CATATAN PERBAIKAN:
+//  - Dihapus: const _origRenderDashboard = renderDashboard; (infinite recursion)
+//  - loadSankey() sekarang dipanggil dari loadDashboard() success handler
+//  - switchTab() closing brace diperbaiki
+// ══════════════════════════════════════════════════════════════════
 
 </script>
