@@ -141,3 +141,12 @@ function invalidateAllCache() {
   const dataKeys  = ['data_master_kategori', 'data_master_akun'];
   [...sheetKeys, ...dataKeys].forEach(k => cache.remove(k));
 }
+
+/**
+ * Format angka ke string Rupiah untuk pesan log backend.
+ * @param {number} angka
+ * @return {string}
+ */
+function formatRupiah_(angka) {
+  return 'Rp ' + (parseFloat(angka) || 0).toLocaleString('id-ID');
+}
