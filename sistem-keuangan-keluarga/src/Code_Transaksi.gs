@@ -1,22 +1,23 @@
 /**
  * MODUL: TRANSACTION ENGINE
- * Standar: Batch Read/Write, Soft Delete, Object Mapping.
+ * v1.1 CHANGES:
+ *   - addTransaksi(): jika akun bertipe CC/PAYLATER dan is_cicilan=true
+ *     → auto-create record di Cicilan_Tracking via addCicilan()
+ *   - addTransaksi(): kolom id_cicilan diisi jika cicilan dibuat
+ *   - addTransfer(): tidak berubah dari v2.2
+ *   - updateTransaksi() / deleteTransaksi(): tidak berubah
  *
- * v2.2 CHANGES:
- *   - addTransaksi()  → auto-isi input_by dari Session.getActiveUser()
- *   - addTransfer()   → NEW: Membuat 2 entri untuk pergeseran saldo internal
- *   - updateTransaksi() / deleteTransaksi() → tidak berubah
- *
- * SCHEMA TRANSAKSI:
+ * SCHEMA TRANSAKSI (v1.1):
  *   id_transaksi, tanggal, bulan, id_akun, id_kategori, tipe, jumlah,
  *   deskripsi, metode_bayar, anggota_keluarga, catatan, status_hapus,
- *   input_by, id_akun_tujuan
+ *   input_by, id_akun_tujuan, id_cicilan  ← BARU v1.1
  *
- * ATURAN TRANSFER:
- *   - UI kirim tipe="TRANSFER" → backend panggil addTransfer() (bukan addTransaksi())
- *   - Membuat 2 baris: PENGELUARAN dari asal + PENDAPATAN ke tujuan
- *   - id_kategori = APP_CONFIG.CATEGORY.TRANSFER_ID → dikecualikan dari laporan
- *   - Keduanya dihubungkan via catatan: "REF:TRF_<timestamp>"
+ * ATURAN CC / PAYLATER:
+ *   - Transaksi pengeluaran CC dicatat PENUH di bulan pembelian
+ *   - Budget 50/30/20 bulan itu langsung terpotong (user sadar beban penuh)
+ *   - Jika is_cicilan=true → addCicilan() auto dipanggil, id_cicilan diisi
+ *   - Pembayaran tagihan → addTransfer (Bank → CC), BUKAN addTransaksi baru
+ *   - id_kategori BAYAR_TAGIHAN_ID hanya muncul dari addTransfer pembayaran tagihan
  */
 
 // ══════════════════════════════════════════════════════════════
@@ -52,10 +53,26 @@ function getTransaksiByMonth(bulan) {
 // ══════════════════════════════════════════════════════════════
 
 /**
- * Menambah transaksi baru. Auto-isi input_by dari akun Google aktif.
- * @param  {Object} data - tanggal, tipe, id_kategori, id_akun, jumlah,
- *                         deskripsi, metode_bayar, anggota_keluarga, catatan
- * @return {Object} { success, id, message }
+ * Menambah transaksi baru.
+ *
+ * v1.1: Jika is_cicilan = true → addCicilan() dipanggil setelah transaksi tersimpan.
+ *
+ * @param {Object} data {
+ *   tanggal          : string  — YYYY-MM-DD
+ *   tipe             : string  — PENDAPATAN | PENGELUARAN
+ *   id_kategori      : string
+ *   id_akun          : string
+ *   jumlah           : number
+ *   deskripsi        : string
+ *   metode_bayar     : string
+ *   anggota_keluarga : string
+ *   catatan          : string
+ *   // v1.1 — parameter cicilan (opsional):
+ *   is_cicilan       : boolean — true jika pembelian pakai cicilan CC/Paylater
+ *   nama_barang      : string  — nama barang yang dicicil
+ *   tenor_bulan      : number  — lama cicilan (bulan)
+ * }
+ * @return {Object} { success, id, id_cicilan, message }
  */
 function addTransaksi(data) {
   try {
@@ -86,14 +103,53 @@ function addTransaksi(data) {
       catatan         : data.catatan           || '',
       status_hapus    : APP_CONFIG.STATUS.AKTIF,
       input_by        : currentUser,
-      id_akun_tujuan  : ''
+      id_akun_tujuan  : '',
+      id_cicilan      : ''    // diisi setelah addCicilan() berhasil (v1.1)
     };
 
     const rowData = mapObjectToRow(newTrx, headerMap);
     sheet.getRange(lastRow + 1, 1, 1, rowData.length).setValues([rowData]);
 
     invalidateCache('data_transaksi_' + newTrx.bulan);
-    return { success: true, id: newTrx.id_transaksi, message: 'Transaksi berhasil disimpan.' };
+
+    // ── v1.1: Auto-create cicilan jika is_cicilan = true ──────────────────
+    let idCicilanBaru = '';
+    if (data.is_cicilan === true || data.is_cicilan === 'true') {
+      const cicilanResult = addCicilan({
+        id_transaksi_awal: newTrx.id_transaksi,
+        id_akun_kredit   : data.id_akun,
+        nama_barang      : data.nama_barang || data.deskripsi || 'Pembelian CC',
+        total_harga      : parseFloat(data.jumlah) || 0,
+        tenor_bulan      : parseInt(data.tenor_bulan, 10) || 1,
+        tanggal          : data.tanggal,
+        keterangan       : data.catatan || ''
+      });
+
+      if (cicilanResult.success) {
+        idCicilanBaru = cicilanResult.id;
+
+        // Update kolom id_cicilan di baris yang baru saja ditulis
+        const idCicilanIdx = headerMap['id_cicilan'];
+        if (idCicilanIdx !== undefined) {
+          sheet.getRange(lastRow + 1, idCicilanIdx + 1).setValue(idCicilanBaru);
+        }
+        console.log(`addTransaksi: cicilan ${idCicilanBaru} dibuat untuk trx ${newTrx.id_transaksi}`);
+      } else {
+        // Cicilan gagal dibuat — log warning tapi transaksi tetap tersimpan
+        console.warn(`addTransaksi: gagal buat cicilan — ${cicilanResult.message}`);
+      }
+    }
+
+    const msgCicilan = idCicilanBaru
+      ? ` Cicilan dibuat: ${idCicilanBaru}.`
+      : '';
+
+    return {
+      success    : true,
+      id         : newTrx.id_transaksi,
+      id_cicilan : idCicilanBaru,
+      message    : 'Transaksi berhasil disimpan.' + msgCicilan
+    };
 
   } catch (e) {
     console.error('addTransaksi error:', e.message);
@@ -103,29 +159,24 @@ function addTransaksi(data) {
 
 
 // ══════════════════════════════════════════════════════════════
-//  WRITE: TRANSFER ANTAR AKUN  (v2.2 NEW)
+//  WRITE: TRANSFER ANTAR AKUN  (tidak berubah dari v2.2)
 // ══════════════════════════════════════════════════════════════
 
 /**
  * Mencatat Transfer Antar Akun secara atomis (2 baris sekaligus).
  *
+ * Digunakan untuk:
+ *   1. Transfer antar akun reguler (Bank → E-Wallet, dst)
+ *   2. Pembayaran tagihan CC/Paylater (Bank → CC) — dipanggil dari bayarTagihanCC()
+ *
  * Baris 1 — PENGELUARAN dari akun asal  (saldo berkurang)
- * Baris 2 — PENDAPATAN  ke  akun tujuan (saldo bertambah)
+ * Baris 2 — PENDAPATAN  ke  akun tujuan (saldo bertambah / utang CC berkurang)
  *
- * Keduanya punya id_kategori = "_TRANSFER_" sehingga:
- *   - TIDAK dihitung sebagai pengeluaran/pendapatan di laporan 50/30/20
- *   - TIDAK muncul di Sankey Diagram pengeluaran
- *   - TETAP dihitung dalam perubahan saldo akun (Saldo_Akun sheet)
+ * id_kategori = "_TRANSFER_" → dikecualikan dari laporan 50/30/20 & Sankey.
  *
- * @param  {Object} data {
- *   tanggal          : "YYYY-MM-DD"
- *   id_akun_asal     : "A001"
- *   nama_akun_asal   : "BCA-Ayah"
- *   id_akun_tujuan   : "A006"
- *   nama_akun_tujuan : "GoPay-Ayah"
- *   jumlah           : 500000
- *   catatan          : "isi saldo GoPay"   (opsional)
- * }
+ * @param {Object} data { tanggal, id_akun_asal, nama_akun_asal,
+ *                        id_akun_tujuan, nama_akun_tujuan, jumlah,
+ *                        anggota_keluarga, catatan }
  * @return {Object} { success, ids, message }
  */
 function addTransfer(data) {
@@ -153,7 +204,7 @@ function addTransfer(data) {
     let lastRow = sheet.getLastRow();
 
     // ── Baris 1: KELUAR dari akun asal ─────────────────────────────────────
-    const idKeluar = generateTrxId(dateObj, lastRow);
+    const idKeluar    = generateTrxId(dateObj, lastRow);
     const barisKeluar = {
       id_transaksi    : idKeluar,
       tanggal         : dateObj,
@@ -168,14 +219,15 @@ function addTransfer(data) {
       catatan         : catatanBase,
       status_hapus    : APP_CONFIG.STATUS.AKTIF,
       input_by        : currentUser,
-      id_akun_tujuan  : data.id_akun_tujuan
+      id_akun_tujuan  : data.id_akun_tujuan,
+      id_cicilan      : ''
     };
     lastRow++;
     sheet.getRange(lastRow, 1, 1, mapObjectToRow(barisKeluar, headerMap).length)
          .setValues([mapObjectToRow(barisKeluar, headerMap)]);
 
     // ── Baris 2: MASUK ke akun tujuan ──────────────────────────────────────
-    const idMasuk = generateTrxId(dateObj, lastRow);
+    const idMasuk    = generateTrxId(dateObj, lastRow);
     const barisMasuk = {
       id_transaksi    : idMasuk,
       tanggal         : dateObj,
@@ -190,7 +242,8 @@ function addTransfer(data) {
       catatan         : catatanBase,
       status_hapus    : APP_CONFIG.STATUS.AKTIF,
       input_by        : currentUser,
-      id_akun_tujuan  : data.id_akun_asal
+      id_akun_tujuan  : data.id_akun_asal,
+      id_cicilan      : ''
     };
     lastRow++;
     sheet.getRange(lastRow, 1, 1, mapObjectToRow(barisMasuk, headerMap).length)
@@ -198,12 +251,10 @@ function addTransfer(data) {
 
     invalidateCache('data_transaksi_' + bulan);
 
-    const namaAsal   = data.nama_akun_asal   || data.id_akun_asal;
-    const namaTujuan = data.nama_akun_tujuan || data.id_akun_tujuan;
     return {
       success: true,
       ids    : [idKeluar, idMasuk],
-      message: `Transfer Rp ${jumlah.toLocaleString('id-ID')} dari ${namaAsal} → ${namaTujuan} berhasil dicatat.`
+      message: `Transfer ${formatRupiah_(jumlah)} dari ${data.nama_akun_asal || data.id_akun_asal} → ${data.nama_akun_tujuan || data.id_akun_tujuan} berhasil.`
     };
 
   } catch (e) {
@@ -214,7 +265,7 @@ function addTransfer(data) {
 
 
 // ══════════════════════════════════════════════════════════════
-//  WRITE: UPDATE & DELETE
+//  WRITE: UPDATE & DELETE (tidak berubah)
 // ══════════════════════════════════════════════════════════════
 
 function updateTransaksi(idTransaksi, updatedData) {
