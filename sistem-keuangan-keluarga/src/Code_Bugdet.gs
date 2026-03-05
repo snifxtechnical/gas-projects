@@ -1,6 +1,6 @@
 /**
  * MODUL: BUDGET ENGINE
- * v2.0 (NEW): Manajemen Budget Bulanan dengan metode 50/30/20.
+ * Manajemen Budget Bulanan dengan metode 50/30/20.
  *
  * Sheet:
  *   Budget_Bulanan  → kolom: bulan, id_kategori, nama_kategori, pos, budget, keterangan
