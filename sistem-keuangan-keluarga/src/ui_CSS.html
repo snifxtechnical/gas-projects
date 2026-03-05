@@ -634,4 +634,107 @@
   .text-muted   { color: var(--text-muted); }
   .bg-soft      { background: var(--soft); }
   .divider      { height: 1px; background: var(--border); margin: 8px 0; }
+
+  /* ══════════════════════════════════════════════════
+     v1.1 — CC / PAYLATER / CICILAN STYLES
+  ══════════════════════════════════════════════════ */
+
+  /* Kartu utang (merah muda) */
+  .utang-card {
+    background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+    border-radius: 20px;
+    padding: 16px;
+    color: white;
+    position: relative;
+    overflow: hidden;
+  }
+  .utang-card::before {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 100px; height: 100px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 50%;
+  }
+
+  /* DSR Bar */
+  .dsr-bar-wrap { width: 100%; background: rgba(255,255,255,0.15); border-radius: 99px; height: 10px; overflow: hidden; }
+  .dsr-bar-fill { height: 100%; border-radius: 99px; transition: width 0.7s cubic-bezier(0.4,0,0.2,1); }
+  .dsr-bar-fill.dsr-aman    { background: #86efac; }
+  .dsr-bar-fill.dsr-warning { background: #fde68a; }
+  .dsr-bar-fill.dsr-danger  { background: #fca5a5; animation: dsrPulse 1.5s ease-in-out infinite; }
+  @keyframes dsrPulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.65; }
+  }
+
+  /* Bill Reminder Banner */
+  .reminder-banner {
+    background: #fff7ed;
+    border: 1.5px solid #fed7aa;
+    border-radius: 16px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .reminder-banner .reminder-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .reminder-banner-danger {
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+
+  /* Cicilan Card */
+  .cicilan-card {
+    background: var(--card);
+    border-radius: 18px;
+    padding: 14px 16px;
+    border: 1.5px solid var(--border);
+    box-shadow: 0 1px 4px rgba(4,61,50,0.06);
+  }
+  .cicilan-card.cicilan-lunas {
+    opacity: 0.55;
+    border-style: dashed;
+  }
+
+  /* Cicilan progress bar */
+  .cicilan-progress-wrap { width: 100%; background: var(--soft); border-radius: 99px; height: 7px; overflow: hidden; margin: 8px 0 4px; }
+  .cicilan-progress-fill { height: 100%; border-radius: 99px; background: var(--primary); transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+  .cicilan-progress-fill.progress-done { background: #86efac; }
+
+  /* Limit Bar (sisa limit CC) */
+  .limit-bar-wrap { width: 100%; background: #fee2e2; border-radius: 99px; height: 6px; overflow: hidden; margin-top: 6px; }
+  .limit-bar-fill { height: 100%; border-radius: 99px; background: #f87171; transition: width 0.6s ease; }
+  .limit-bar-fill.limit-safe { background: var(--primary); }
+
+  /* Cicilan toggle (di form transaksi) */
+  .cicilan-toggle-wrap {
+    background: #fff7ed;
+    border: 1.5px solid #fed7aa;
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .cicilan-toggle-wrap.active {
+    background: var(--soft);
+    border-color: var(--primary);
+  }
+
+  /* Badge CC / Paylater */
+  .badge-cc      { background: #fee2e2; color: #b91c1c; }
+  .badge-paylater{ background: #fdf4ff; color: #7e22ce; }
+
+  /* Future liability mini chart bars */
+  .fl-bar-wrap { display: flex; align-items: flex-end; gap: 4px; height: 48px; }
+  .fl-bar {
+    flex: 1;
+    background: rgba(255,255,255,0.2);
+    border-radius: 4px 4px 0 0;
+    transition: height 0.5s ease;
+    min-height: 4px;
+  }
+  .fl-bar:first-child { background: rgba(255,255,255,0.35); }
 </style>
